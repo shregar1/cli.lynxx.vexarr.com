@@ -22,6 +22,7 @@ use clap_complete::generate;
 use serde_json::Value as Json;
 use uuid::Uuid;
 
+mod billing;
 mod cli;
 mod client;
 mod commands;
@@ -1463,7 +1464,7 @@ async fn main() -> ExitCode {
         _ => OutputFormat::Table,
     });
 
-    let client = Client::new(&gateway_url, api_key);
+    let client = Client::new(&gateway_url, api_key.clone());
 
     let result: Result<()> = match cli.command {
         Cmd::Ping => cmd_ping(&client).await,
@@ -2134,7 +2135,44 @@ async fn main() -> ExitCode {
             generate(shell, &mut cmd, bin, &mut io::stdout());
             Ok(())
         }
-        Cmd::Start { args } => cmd_start(args),
+        Cmd::Start { args } => cmd_start(args, api_key.clone()),
+        Cmd::Login(_) => {
+            // `--api-key` (flag) takes precedence over `LYNXX_API_KEY` env;
+            // clap merges them into `cli.api_key`. We split them back apart
+            // so the prompt fallback only fires when both are absent.
+            let env_key = std::env::var("LYNXX_API_KEY")
+                .ok()
+                .filter(|s| !s.is_empty());
+            let flag_key = match (&cli.api_key, &env_key) {
+                // Clap can't tell us whether `cli.api_key` came from the flag
+                // or the env. If they match exactly we assume env. If they
+                // differ the flag must have won.
+                (Some(v), Some(e)) if v == e => None,
+                (Some(v), _) => Some(v.clone()),
+                _ => None,
+            };
+            commands::login::cmd_login(commands::login::LoginInput {
+                api_key_flag: flag_key,
+                api_key_env: env_key,
+                billing_url: cli.billing_url.clone(),
+            })
+            .await
+        }
+        Cmd::Whoami(args) => {
+            // Spec says env > config; the global `--api-key` flag is treated
+            // as an env-equivalent override.
+            let env_key = std::env::var("LYNXX_API_KEY")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .or_else(|| cli.api_key.clone());
+            commands::whoami::cmd_whoami(commands::whoami::WhoamiInput {
+                billing_url: cli.billing_url.clone(),
+                api_key_env: env_key,
+                json: args.json,
+            })
+            .await
+        }
+        Cmd::Logout => commands::logout::cmd_logout(),
     };
 
     match result {

@@ -34,6 +34,23 @@ pub struct LocalConfig {
     pub no_color: Option<bool>,
     #[serde(default)]
     pub full_id: Option<bool>,
+    /// Billing-API credentials (populated by `lynxx login`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing: Option<BillingConfig>,
+}
+
+/// Persisted billing-API credentials. Lives under `[billing]` in
+/// `~/.config/lynxx/config.toml`. Populated by `lynxx login`, read by
+/// `lynxx whoami`, wiped by `lynxx logout`.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct BillingConfig {
+    /// API key issued by the billing API (`lnx_live_...`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    /// Billing-API base URL. Only persisted when overridden from the default
+    /// `https://api.lynxx.vexarr.com`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -143,4 +160,51 @@ pub fn cmd_config(action: ConfigCmd) -> Result<()> {
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn billing_config_round_trip() {
+        // Write a config that contains a `[billing]` section with an api_key,
+        // serialise to TOML, parse it back, and confirm the key survived.
+        let mut cfg = LocalConfig::default();
+        cfg.billing = Some(BillingConfig {
+            api_key: Some("lnx_live_abc123".into()),
+            url: Some("https://api.lynxx.vexarr.com".into()),
+        });
+
+        let raw = toml::to_string_pretty(&cfg).expect("serialize");
+        assert!(
+            raw.contains("[billing]"),
+            "serialised TOML should contain a [billing] section, got:\n{raw}",
+        );
+        assert!(raw.contains("lnx_live_abc123"));
+
+        let parsed: LocalConfig = toml::from_str(&raw).expect("deserialize");
+        let billing = parsed.billing.expect("billing section preserved");
+        assert_eq!(billing.api_key.as_deref(), Some("lnx_live_abc123"));
+        assert_eq!(
+            billing.url.as_deref(),
+            Some("https://api.lynxx.vexarr.com"),
+        );
+    }
+
+    #[test]
+    fn billing_config_absent_when_unset() {
+        // A default LocalConfig should NOT emit an empty [billing] table.
+        // skip_serializing_if = "Option::is_none" guards that.
+        let cfg = LocalConfig::default();
+        let raw = toml::to_string_pretty(&cfg).expect("serialize");
+        assert!(
+            !raw.contains("[billing]"),
+            "empty config should omit [billing], got:\n{raw}",
+        );
+    }
 }
