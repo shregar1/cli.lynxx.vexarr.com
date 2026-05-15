@@ -135,8 +135,18 @@ pub async fn cmd_exec(
     Ok(())
 }
 
-/// `lynxx start [...]` -- replaces the current process with `lynxx-gateway`.
-pub fn cmd_start(args: Vec<String>) -> Result<()> {
+/// `lynxx start [...]` — replace the current process with `lynxx-gateway`.
+///
+/// `api_key` is the API key resolved by `main.rs` (precedence:
+/// `--api-key` flag > `LYNXX_API_KEY` env > config). When present, we
+/// re-export it into the spawned child's `LYNXX_API_KEY` env so a single
+/// `lynxx login` (or a `lynxx --api-key … start …` invocation) covers
+/// both the CLI auth check and the gateway runtime.
+///
+/// Without this re-export, only the env-var path would work — passing
+/// `--api-key` via the CLI flag would never reach the gateway because
+/// `exec()` would otherwise just inherit the unmodified parent env.
+pub fn cmd_start(args: Vec<String>, api_key: Option<String>) -> Result<()> {
     use std::os::unix::process::CommandExt;
     use std::process::Command;
 
@@ -147,7 +157,17 @@ pub fn cmd_start(args: Vec<String>) -> Result<()> {
         green("\u{2713}")
     );
 
-    let err = Command::new(&gateway).args(&args).exec();
+    let mut cmd = Command::new(&gateway);
+    cmd.args(&args);
+    // The child inherits the parent environment by default, so a present
+    // LYNXX_API_KEY env already propagates. The remaining gap is the
+    // global `--api-key` flag, which clap parsed into a local variable —
+    // re-export it so both input paths reach the gateway.
+    if let Some(key) = api_key.as_ref().filter(|k| !k.is_empty()) {
+        cmd.env("LYNXX_API_KEY", key);
+    }
+
+    let err = cmd.exec();
     Err(anyhow::anyhow!(
         "failed to exec {}: {}",
         gateway.display(),

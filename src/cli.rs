@@ -28,6 +28,10 @@ pub struct Cli {
     #[arg(long, env = "LYNXX_BASE_URL", global = true)]
     pub base_url: Option<String>,
 
+    /// Lynxx billing API base URL (default: https://api.lynxx.vexarr.com)
+    #[arg(long, env = "LYNXX_BILLING_URL", global = true)]
+    pub billing_url: Option<String>,
+
     /// Lynxx license key
     #[arg(long, env = "LYNXX_LICENSE_KEY", global = true)]
     pub license_key: Option<String>,
@@ -287,6 +291,27 @@ pub enum Cmd {
         /// Arguments forwarded to lynxx-gateway (e.g. --config /etc/lynxx.toml).
         args: Vec<String>,
     },
+    /// Authenticate against the Lynxx billing API and persist the key
+    Login(LoginArgs),
+    /// Show the signed-in account from the billing API
+    Whoami(WhoamiArgs),
+    /// Forget the persisted billing API key
+    Logout,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct LoginArgs {
+    // Intentionally empty: the API key is read from the global `--api-key`
+    // flag (which also honours `LYNXX_API_KEY`). If neither is set the
+    // command prompts on stdin. Billing URL overrides come from the
+    // global `--billing-url` flag / `LYNXX_BILLING_URL` env.
+}
+
+#[derive(clap::Args, Debug)]
+pub struct WhoamiArgs {
+    /// Print the raw billing API response as pretty JSON.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]

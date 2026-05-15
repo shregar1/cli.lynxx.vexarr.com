@@ -7,11 +7,14 @@ pub mod admin;
 pub mod declarative;
 pub mod exec;
 pub mod live;
+pub mod login;
+pub mod logout;
 pub mod plugins;
 pub mod record;
 pub mod resources;
 pub mod routes;
 pub mod services;
+pub mod whoami;
 
 use std::collections::HashMap;
 
