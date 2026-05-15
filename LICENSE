@@ -1,0 +1,38 @@
+cli.lynxx.dev — Proprietary License (Private Beta)
+
+Copyright (c) 2026 shregar1. All Rights Reserved.
+
+This software ("Software") is the confidential and proprietary
+information of the copyright holder.
+
+The Software is licensed, not sold. No rights of any kind are granted
+to use, copy, modify, distribute, sublicense, or otherwise exploit the
+Software or any portion of it, except under the terms of a separate
+written agreement signed by the copyright holder.
+
+Any prior LICENSE file in this repository (including any open-source
+license such as MIT) is superseded by this LICENSE for the current and
+all future revisions of the source tree. Versions previously distributed
+under an earlier LICENSE are out of scope of this notice; the copyright
+holder reserves all rights to the current and future code.
+
+WITHOUT LIMITING THE FOREGOING, THE SOFTWARE IS NOT LICENSED FOR:
+
+  * Public distribution of source code, binaries, or container images.
+  * Use in a publicly accessible production service.
+  * Mirroring the source tree to a public or private third-party
+    location, including any code-hosting platform.
+  * Publication of benchmarks, marketing material, screenshots, or
+    derived analyses without prior written approval.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+For questions about access, license keys, or commercial licensing
+terms, contact the copyright holder through the private channel
+established at onboarding.
