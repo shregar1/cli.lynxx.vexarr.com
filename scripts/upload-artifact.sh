@@ -20,8 +20,23 @@ Usage:
   scripts/upload-artifact.sh \
     --binary  <path>           file to upload (required)
     --dest    <gs://...>       destination prefix (required, no trailing slash)
+                               with --os / --arch / --platform, this is the BASE
+                               (e.g. gs://lynxx-public/cli) and /<os>/<arch> is
+                               auto-appended; without them, pass the full path
     --name    <str>            artifact name, e.g. lynxx (required)
+                               with --os windows, ".exe" is auto-appended to the
+                               GCS object names (callers don't need to think
+                               about extensions)
     --version <str>            version, e.g. v0.1.0-abc1234 (required)
+    --os      <linux|darwin|windows>
+                               OS slot in the GCS path. Auto-appended to --dest
+                               (unless --dest already ends in /<os>/<arch>),
+                               auto-added to metadata as "os=<value>", and
+                               drives the .exe suffix on Windows.
+    --arch    <amd64|arm64>    arch slot in the GCS path. Same auto-append +
+                               auto-metadata as --os.
+    --platform <os/arch>       shorthand for --os <os> --arch <arch>
+                               (e.g. --platform darwin/arm64)
     --meta    <key=value>      extra metadata (repeatable; values cannot contain commas)
     --no-stable                skip the stable pointer upload (versioned only)
     --signing-key <ref>        Ed25519 PEM private key for release signing.
@@ -38,10 +53,10 @@ Usage:
                                 only used when signing is enabled)
     --dry-run                  print the gcloud commands instead of running them
 
-Short flags: -f, -d, -n, -v, -m, -h
+Short flags: -f, -d, -n, -v, -m, -p, -h
 
 Examples:
-  # Upload a Linux/amd64 CLI build with commit + target metadata.
+  # Old style — explicit full destination path. Still works.
   scripts/upload-artifact.sh \
     -f target/x86_64-unknown-linux-gnu/release/lynxx \
     -d gs://lynxx-public/cli/linux/amd64 \
@@ -49,10 +64,35 @@ Examples:
     -v v0.1.0-abc1234 \
     -m os=linux -m arch=amd64 -m commit=abc1234
 
+  # New style — pass the base prefix + --platform; everything else is auto.
+  scripts/upload-artifact.sh \
+    -f target/x86_64-unknown-linux-gnu/release/lynxx \
+    -d gs://lynxx-public/cli \
+    -p linux/amd64 \
+    -n lynxx -v v0.1.0-abc1234 -m commit=abc1234
+  # → uploads to gs://lynxx-public/cli/linux/amd64/lynxx{,-v0.1.0-abc1234}
+
+  # macOS arm64 (Apple Silicon).
+  scripts/upload-artifact.sh \
+    -f target/aarch64-apple-darwin/release/lynxx \
+    -d gs://lynxx-public/cli \
+    -p darwin/arm64 \
+    -n lynxx -v v0.1.0-abc1234
+
+  # Windows amd64. Local file is lynxx.exe; --name stays bare "lynxx" — the
+  # script auto-appends .exe to the GCS object names.
+  scripts/upload-artifact.sh \
+    -f target/x86_64-pc-windows-gnu/release/lynxx.exe \
+    -d gs://lynxx-public/cli \
+    -p windows/amd64 \
+    -n lynxx -v v0.1.0-abc1234
+  # → uploads to gs://lynxx-public/cli/windows/amd64/lynxx.exe (stable)
+  #   and gs://lynxx-public/cli/windows/amd64/lynxx-v0.1.0-abc1234.exe
+
   # Upload a versioned-only rollback artifact (no stable pointer overwrite).
   scripts/upload-artifact.sh \
     --binary  target/release/lynxx-gateway \
-    --dest    gs://lynxx-public/gateway/linux/amd64 \
+    --dest    gs://lynxx-public/gateway --platform linux/amd64 \
     --name    lynxx-gateway \
     --version v0.1.0-rollback \
     --no-stable
@@ -60,6 +100,7 @@ EOF
 }
 
 BINARY=""; DEST=""; NAME=""; VERSION=""
+OS=""; ARCH=""
 declare -a META=()
 SKIP_STABLE=0
 DRY_RUN=0
@@ -74,6 +115,12 @@ while [[ $# -gt 0 ]]; do
     -n|--name)           NAME="$2"; shift 2 ;;
     -v|--version)        VERSION="$2"; shift 2 ;;
     -m|--meta)           META+=("$2"); shift 2 ;;
+    --os)                OS="$2"; shift 2 ;;
+    --arch)              ARCH="$2"; shift 2 ;;
+    -p|--platform)
+      # --platform <os>/<arch> shorthand. Split on the first slash.
+      [[ "$2" == */* ]] || { echo "--platform must be os/arch, got: $2" >&2; exit 1; }
+      OS="${2%%/*}"; ARCH="${2#*/}"; shift 2 ;;
     --no-stable)         SKIP_STABLE=1; shift ;;
     --signing-key)       SIGNING_KEY="$2"; shift 2 ;;
     --openssl-bin)       OPENSSL_BIN="$2"; shift 2 ;;
@@ -91,6 +138,55 @@ done
 [[ -f "$BINARY"  ]] || { echo "binary not found: $BINARY" >&2; exit 1; }
 [[ "$DEST" == gs://* ]] || { echo "--dest must start with gs://" >&2; exit 1; }
 DEST="${DEST%/}"
+
+# --- Platform validation + auto-derivation ----------------------------------
+# --os and --arch must be passed together (or neither). When both are set:
+#   * Allowed values are validated against the known-supported list — typo
+#     protection so a stray "amd_64" doesn't create a phantom GCS prefix.
+#   * If --dest already ends in /<os>/<arch>, leave it alone (callers
+#     migrating from the old explicit-path style keep working unchanged).
+#   * Otherwise append /<os>/<arch> to --dest.
+#   * Auto-inject "os=<os>" and "arch=<arch>" into the metadata array
+#     (skipped if the caller already passed them — first-wins).
+#   * On --os windows, append ".exe" to the GCS artifact name so the stable
+#     pointer becomes <name>.exe (matching what Windows installers expect).
+#     The local --binary file is also verified to end in .exe (warning only
+#     — some build pipelines strip the suffix when copying out of target/).
+EXE_SUFFIX=""
+if [[ -n "$OS" || -n "$ARCH" ]]; then
+  [[ -n "$OS"   ]] || { echo "--arch requires --os (or use --platform <os>/<arch>)"   >&2; exit 1; }
+  [[ -n "$ARCH" ]] || { echo "--os requires --arch (or use --platform <os>/<arch>)" >&2; exit 1; }
+  case "$OS" in
+    linux|darwin|windows) ;;
+    *) echo "--os must be one of: linux | darwin | windows (got: $OS)" >&2; exit 1 ;;
+  esac
+  case "$ARCH" in
+    amd64|arm64) ;;
+    *) echo "--arch must be one of: amd64 | arm64 (got: $ARCH)" >&2; exit 1 ;;
+  esac
+
+  # Auto-append /<os>/<arch> if --dest doesn't already end with it.
+  if [[ "$DEST" != *"/$OS/$ARCH" ]]; then
+    DEST="$DEST/$OS/$ARCH"
+  fi
+
+  # Auto-inject os/arch metadata (first-wins so an explicit --meta os=foo
+  # passed by the caller still overrides).
+  have_os_meta=0; have_arch_meta=0
+  for m in "${META[@]:-}"; do
+    [[ "$m" == os=*   ]] && have_os_meta=1
+    [[ "$m" == arch=* ]] && have_arch_meta=1
+  done
+  [[ "$have_os_meta"   -eq 0 ]] && META+=("os=$OS")
+  [[ "$have_arch_meta" -eq 0 ]] && META+=("arch=$ARCH")
+
+  if [[ "$OS" == "windows" ]]; then
+    EXE_SUFFIX=".exe"
+    # Soft check — warn if the local binary doesn't look like a Windows exe.
+    [[ "$BINARY" == *.exe ]] || \
+      echo "  WARN: --os windows but --binary doesn't end in .exe ($BINARY) — uploading anyway" >&2
+  fi
+fi
 
 command -v gcloud  >/dev/null 2>&1 || { echo "gcloud CLI required" >&2; exit 1; }
 command -v shasum  >/dev/null 2>&1 || { echo "shasum required"     >&2; exit 1; }
@@ -115,8 +211,8 @@ for m in "${META[@]:-}"; do
 done
 META_ARG=$(IFS=,; echo "${META_PAIRS[*]}")
 
-VERSIONED="$DEST/${NAME}-${VERSION}"
-STABLE="$DEST/${NAME}"
+VERSIONED="$DEST/${NAME}-${VERSION}${EXE_SUFFIX}"
+STABLE="$DEST/${NAME}${EXE_SUFFIX}"
 
 # Sidecar checksum file. The gateway's /v1/install/binary endpoint reads
 # this and returns it as X-Content-SHA256 so install scripts can verify
@@ -125,7 +221,7 @@ STABLE="$DEST/${NAME}"
 CHECKSUM_FILE=$(mktemp)
 SIGNATURE_FILE=""
 trap 'rm -f "$CHECKSUM_FILE" "$SIGNATURE_FILE"' EXIT
-printf '%s  %s\n' "$SHA256" "$NAME" > "$CHECKSUM_FILE"
+printf '%s  %s\n' "$SHA256" "${NAME}${EXE_SUFFIX}" > "$CHECKSUM_FILE"
 
 # Optional Ed25519 signature. Activated when --signing-key / $VEXARR_SIGNING_KEY
 # is set AND OpenSSL 3+ is available. Produces a <name>.sig sidecar (binary
