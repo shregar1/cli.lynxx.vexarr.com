@@ -1,19 +1,46 @@
 #!/usr/bin/env bash
-# Generic GCS artifact uploader.
-# See usage() for details.
+# Orchestrator for the signed-upload pipeline. See scripts/upload/*.sh for
+# the individual stages. Same external CLI as the old monolith — release-all-
+# platforms.sh and any human callers don't need to change anything.
+#
+# Pipeline:
+#   1. compute-metadata.sh   — sha256, size, build_time, .sha256 sidecar, META
+#   2. sign-binary.sh        — Ed25519 .sig (skipped if no --signing-key)
+#   3. copy-to-gcs.sh        — uploads binary + .sha256 + .sig for both the
+#                              versioned URI and the stable pointer (twice)
+#   4. publish-transparency-log.sh — log entries for both URIs (skipped if
+#                              unsigned or --transparency-log "")
+#
+# Stages share state via a context file (bash-sourceable KEY=value lines)
+# that this orchestrator creates in mktemp and deletes on exit. Each stage
+# appends to it; downstream stages source it to pick up upstream outputs.
+#
+# Backward compat: identical CLI, identical exit code on success, identical
+# stdout shape. Existing callers (release-all-platforms.sh, deploy.sh)
+# don't need to change.
 
-set -euo pipefail
+# `-u` (nounset) is intentionally OFF — the orchestrator expands optional
+# arrays like `"${meta_args[@]}"` which can be empty. Bash's strict-mode
+# array expansion is fragile here and the workarounds are uglier than the
+# loss of `-u` is worth at this scope. Stages keep `set -euo pipefail`.
+set -eo pipefail
 
 usage() {
   cat <<'EOF'
-Upload a binary to GCS as a versioned artifact + stable pointer.
+Upload a binary to GCS as a versioned artifact + stable pointer, signed
+with Ed25519 and published to the transparency log. Orchestrates the
+stages in scripts/upload/.
 
 Uploads BINARY to:
-  ${DEST}/${NAME}-${VERSION}     versioned (immutable — keeps history for rollback)
-  ${DEST}/${NAME}                stable "always-latest" pointer (mutable)
+  ${DEST}/${NAME}-${VERSION}${EXE}    versioned (immutable, kept for rollback)
+  ${DEST}/${NAME}${EXE}               stable "always-latest" pointer (mutable)
+  + .sha256 sidecar for each (text/plain)
+  + .sig sidecar for each (when signing enabled)
+  + transparency-log entry per URI (when signing + log enabled)
 
 Custom GCS metadata is attached to both copies. Auto-included:
   version, sha256, build_time, size_bytes
+  os, arch — when --os/--arch (or --platform) is set
 Caller-supplied metadata is layered on top via --meta.
 
 Usage:
@@ -72,13 +99,6 @@ Examples:
     -n lynxx -v v0.1.0-abc1234 -m commit=abc1234
   # → uploads to gs://lynxx-public/cli/linux/amd64/lynxx{,-v0.1.0-abc1234}
 
-  # macOS arm64 (Apple Silicon).
-  scripts/upload-artifact.sh \
-    -f target/aarch64-apple-darwin/release/lynxx \
-    -d gs://lynxx-public/cli \
-    -p darwin/arm64 \
-    -n lynxx -v v0.1.0-abc1234
-
   # Windows amd64. Local file is lynxx.exe; --name stays bare "lynxx" — the
   # script auto-appends .exe to the GCS object names.
   scripts/upload-artifact.sh \
@@ -87,15 +107,6 @@ Examples:
     -p windows/amd64 \
     -n lynxx -v v0.1.0-abc1234
   # → uploads to gs://lynxx-public/cli/windows/amd64/lynxx.exe (stable)
-  #   and gs://lynxx-public/cli/windows/amd64/lynxx-v0.1.0-abc1234.exe
-
-  # Upload a versioned-only rollback artifact (no stable pointer overwrite).
-  scripts/upload-artifact.sh \
-    --binary  target/release/lynxx-gateway \
-    --dest    gs://lynxx-public/gateway --platform linux/amd64 \
-    --name    lynxx-gateway \
-    --version v0.1.0-rollback \
-    --no-stable
 EOF
 }
 
@@ -118,7 +129,6 @@ while [[ $# -gt 0 ]]; do
     --os)                OS="$2"; shift 2 ;;
     --arch)              ARCH="$2"; shift 2 ;;
     -p|--platform)
-      # --platform <os>/<arch> shorthand. Split on the first slash.
       [[ "$2" == */* ]] || { echo "--platform must be os/arch, got: $2" >&2; exit 1; }
       OS="${2%%/*}"; ARCH="${2#*/}"; shift 2 ;;
     --no-stable)         SKIP_STABLE=1; shift ;;
@@ -139,299 +149,182 @@ done
 [[ "$DEST" == gs://* ]] || { echo "--dest must start with gs://" >&2; exit 1; }
 DEST="${DEST%/}"
 
-# --- Platform validation + auto-derivation ----------------------------------
-# --os and --arch must be passed together (or neither). When both are set:
-#   * Allowed values are validated against the known-supported list — typo
-#     protection so a stray "amd_64" doesn't create a phantom GCS prefix.
-#   * If --dest already ends in /<os>/<arch>, leave it alone (callers
-#     migrating from the old explicit-path style keep working unchanged).
-#   * Otherwise append /<os>/<arch> to --dest.
-#   * Auto-inject "os=<os>" and "arch=<arch>" into the metadata array
-#     (skipped if the caller already passed them — first-wins).
-#   * On --os windows, append ".exe" to the GCS artifact name so the stable
-#     pointer becomes <name>.exe (matching what Windows installers expect).
-#     The local --binary file is also verified to end in .exe (warning only
-#     — some build pipelines strip the suffix when copying out of target/).
+command -v gcloud >/dev/null 2>&1 || { echo "gcloud CLI required" >&2; exit 1; }
+
+# ── Platform validation + auto-derivation ────────────────────────────────────
+# Same as the monolith: --os and --arch together → validate, auto-append the
+# /<os>/<arch> path, auto-inject os/arch metadata, set EXE_SUFFIX on Windows.
 EXE_SUFFIX=""
+PLATFORM=""
 if [[ -n "$OS" || -n "$ARCH" ]]; then
   [[ -n "$OS"   ]] || { echo "--arch requires --os (or use --platform <os>/<arch>)"   >&2; exit 1; }
   [[ -n "$ARCH" ]] || { echo "--os requires --arch (or use --platform <os>/<arch>)" >&2; exit 1; }
-  case "$OS" in
-    linux|darwin|windows) ;;
-    *) echo "--os must be one of: linux | darwin | windows (got: $OS)" >&2; exit 1 ;;
-  esac
-  case "$ARCH" in
-    amd64|arm64) ;;
-    *) echo "--arch must be one of: amd64 | arm64 (got: $ARCH)" >&2; exit 1 ;;
-  esac
+  case "$OS"   in linux|darwin|windows) ;; *) echo "--os must be linux|darwin|windows (got: $OS)"   >&2; exit 1 ;; esac
+  case "$ARCH" in amd64|arm64)          ;; *) echo "--arch must be amd64|arm64 (got: $ARCH)"        >&2; exit 1 ;; esac
+  PLATFORM="$OS/$ARCH"
 
-  # Auto-append /<os>/<arch> if --dest doesn't already end with it.
   if [[ "$DEST" != *"/$OS/$ARCH" ]]; then
     DEST="$DEST/$OS/$ARCH"
   fi
 
-  # Auto-inject os/arch metadata (first-wins so an explicit --meta os=foo
-  # passed by the caller still overrides).
-  have_os_meta=0; have_arch_meta=0
-  for m in "${META[@]:-}"; do
-    [[ "$m" == os=*   ]] && have_os_meta=1
-    [[ "$m" == arch=* ]] && have_arch_meta=1
-  done
-  [[ "$have_os_meta"   -eq 0 ]] && META+=("os=$OS")
-  [[ "$have_arch_meta" -eq 0 ]] && META+=("arch=$ARCH")
-
   if [[ "$OS" == "windows" ]]; then
     EXE_SUFFIX=".exe"
-    # Soft check — warn if the local binary doesn't look like a Windows exe.
     [[ "$BINARY" == *.exe ]] || \
       echo "  WARN: --os windows but --binary doesn't end in .exe ($BINARY) — uploading anyway" >&2
   fi
 fi
 
-command -v gcloud  >/dev/null 2>&1 || { echo "gcloud CLI required" >&2; exit 1; }
-command -v shasum  >/dev/null 2>&1 || { echo "shasum required"     >&2; exit 1; }
-
-SIZE=$(wc -c < "$BINARY" | tr -d ' ')
-SHA256=$(shasum -a 256 "$BINARY" | cut -d' ' -f1)
-BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-META_PAIRS=(
-  "version=$VERSION"
-  "sha256=$SHA256"
-  "build_time=$BUILD_TIME"
-  "size_bytes=$SIZE"
-)
-for m in "${META[@]:-}"; do
-  [[ -n "$m" ]] || continue
-  [[ "$m" == *"="* ]] || { echo "--meta must be key=value, got: $m" >&2; exit 1; }
-  case "$m" in
-    *,*) echo "--meta values cannot contain commas (gcloud limitation): $m" >&2; exit 1 ;;
-  esac
-  META_PAIRS+=("$m")
-done
-META_ARG=$(IFS=,; echo "${META_PAIRS[*]}")
-
 VERSIONED="$DEST/${NAME}-${VERSION}${EXE_SUFFIX}"
 STABLE="$DEST/${NAME}${EXE_SUFFIX}"
 
-# Sidecar checksum file. The gateway's /v1/install/binary endpoint reads
-# this and returns it as X-Content-SHA256 so install scripts can verify
-# integrity client-side. Format: single line "<hex-sha256>  <filename>\n"
-# (compatible with `shasum -a 256 -c` for manual verification).
-CHECKSUM_FILE=$(mktemp)
-SIGNATURE_FILE=""
-trap 'rm -f "$CHECKSUM_FILE" "$SIGNATURE_FILE"' EXIT
-printf '%s  %s\n' "$SHA256" "${NAME}${EXE_SUFFIX}" > "$CHECKSUM_FILE"
-
-# Optional Ed25519 signature. Activated when --signing-key / $VEXARR_SIGNING_KEY
-# is set AND OpenSSL 3+ is available. Produces a <name>.sig sidecar (binary
-# format, 64-byte Ed25519 signature over the raw artifact bytes). Older
-# OpenSSL builds (LibreSSL on macOS by default, OpenSSL 1.1.x on older Linux)
-# do not support Ed25519 — point --openssl-bin at /opt/homebrew/opt/openssl@3
-# or similar.
-#
-# --signing-key accepts either a filesystem path or a gcp-secret:// URI that
-# resolves to a Secret Manager payload. The URI form is preferred in CI/CD so
-# the private key never lands on disk.
-
-# Resolve --signing-key into a real on-disk PEM path. Materialises Secret
-# Manager payloads into a chmod-600 temp file that we wipe on exit.
-# Sets globals (RESOLVED_KEY_FILE, SIGNING_KEY_RESOLVED) instead of echoing,
-# so `exit` propagates cleanly without command-substitution interception.
-RESOLVED_KEY_FILE=""
-SIGNING_KEY_RESOLVED=""
-resolve_signing_key() {
-  local ref="$1"
-  case "$ref" in
-    gcp-secret://*)
-      local rest="${ref#gcp-secret://}"
-      local name="$rest" version="latest" project=""
-      if [[ "$rest" == *\?* ]]; then
-        local query="${rest#*\?}"
-        name="${rest%%\?*}"
-        case "$query" in project=*) project="${query#project=}" ;; esac
-      fi
-      if [[ "$name" == *@* ]]; then
-        version="${name#*@}"
-        name="${name%@*}"
-      fi
-      command -v gcloud >/dev/null 2>&1 || {
-        echo "gcloud CLI required for gcp-secret:// keys" >&2
-        return 1
-      }
-      local tmp
-      tmp=$(mktemp)
-      chmod 600 "$tmp"
-      local ok=0
-      if [[ -n "$project" ]]; then
-        gcloud secrets versions access "$version" --secret="$name" --project="$project" > "$tmp" 2>/dev/null && ok=1
-      else
-        gcloud secrets versions access "$version" --secret="$name" > "$tmp" 2>/dev/null && ok=1
-      fi
-      if [[ "$ok" -ne 1 ]]; then
-        rm -f "$tmp"
-        echo "failed to fetch Secret Manager payload: $ref" >&2
-        return 1
-      fi
-      RESOLVED_KEY_FILE="$tmp"
-      SIGNING_KEY_RESOLVED="$tmp"
-      return 0
-      ;;
-    *)
-      [[ -f "$ref" ]] || {
-        echo "signing key not found: $ref" >&2
-        return 1
-      }
-      SIGNING_KEY_RESOLVED="$ref"
-      return 0
-      ;;
-  esac
-}
-
-SIG_HEX=""
-if [[ -n "$SIGNING_KEY" ]]; then
-  resolve_signing_key "$SIGNING_KEY" || exit 1
-  SIGNING_KEY="$SIGNING_KEY_RESOLVED"
-  if [[ -z "$OPENSSL_BIN" ]]; then
-    # Prefer Homebrew OpenSSL on macOS over LibreSSL.
-    for candidate in /opt/homebrew/opt/openssl@3/bin/openssl /opt/homebrew/opt/openssl/bin/openssl /usr/local/opt/openssl@3/bin/openssl openssl; do
-      if command -v "$candidate" >/dev/null 2>&1 && \
-         "$candidate" version 2>/dev/null | grep -q "^OpenSSL"; then
-        OPENSSL_BIN="$candidate"
-        break
-      fi
-    done
-  fi
-  [[ -n "$OPENSSL_BIN" ]] || { echo "no OpenSSL 3+ found (LibreSSL does not support Ed25519)" >&2; exit 1; }
-
-  SIGNATURE_FILE=$(mktemp)
-  if ! "$OPENSSL_BIN" pkeyutl -sign -inkey "$SIGNING_KEY" -rawin -in "$BINARY" -out "$SIGNATURE_FILE" 2>/dev/null; then
-    echo "signing failed (check that key is Ed25519 and openssl is 3+)" >&2
+# ── Set up the shared context + clean-up trap ────────────────────────────────
+STAGES_DIR="$(cd "$(dirname "$0")" && pwd)/upload"
+for stage in compute-metadata sign-binary copy-to-gcs publish-transparency-log; do
+  [[ -x "$STAGES_DIR/$stage.sh" ]] || {
+    echo "missing or non-executable stage: $STAGES_DIR/$stage.sh" >&2
     exit 1
+  }
+done
+
+CONTEXT=$(mktemp)
+# Track temp files created by stages so we can clean them up.
+cleanup() {
+  local rc=$?
+  # Source the context one last time so we know what the stages allocated.
+  # shellcheck source=/dev/null
+  [[ -f "$CONTEXT" ]] && source "$CONTEXT" 2>/dev/null || true
+  for f in "${CHECKSUM_FILE:-}" "${SIGNATURE_FILE:-}"; do
+    [[ -n "$f" && -f "$f" ]] && rm -f "$f"
+  done
+  # Only delete the resolved Secret Manager temp key, not a user-supplied PEM.
+  if [[ -n "${SIGNING_KEY_RESOLVED:-}" && "$SIGNING_KEY_RESOLVED" == /tmp/* && "$SIGNING_KEY_RESOLVED" != "$SIGNING_KEY" ]]; then
+    rm -f "$SIGNING_KEY_RESOLVED"
   fi
-  SIG_HEX=$(od -An -v -tx1 "$SIGNATURE_FILE" | tr -d ' \n')
-  echo "    signed:   ${SIG_HEX:0:32}… (${#SIG_HEX}/2 bytes)"
-fi
+  rm -f "$CONTEXT"
+  exit $rc
+}
+trap cleanup EXIT
+
+# Seed the context with what the orchestrator owns.
+{
+  printf 'BINARY=%q\n'           "$BINARY"
+  printf 'NAME=%q\n'             "$NAME"
+  printf 'VERSION=%q\n'          "$VERSION"
+  printf 'DEST=%q\n'              "$DEST"
+  printf 'OS=%q\n'                "$OS"
+  printf 'ARCH=%q\n'              "$ARCH"
+  printf 'PLATFORM=%q\n'          "$PLATFORM"
+  printf 'EXE_SUFFIX=%q\n'        "$EXE_SUFFIX"
+  printf 'VERSIONED=%q\n'         "$VERSIONED"
+  printf 'STABLE=%q\n'            "$STABLE"
+  printf 'SKIP_STABLE=%q\n'       "$SKIP_STABLE"
+  printf 'DRY_RUN=%q\n'           "$DRY_RUN"
+  printf 'TRANSPARENCY_LOG=%q\n'  "$TRANSPARENCY_LOG"
+} > "$CONTEXT"
 
 echo "==> Artifact"
 echo "    binary:   $BINARY"
-echo "    size:     $SIZE bytes"
-echo "    sha256:   $SHA256"
+echo "    name:     $NAME"
 echo "    version:  $VERSION"
-echo "    metadata: $META_ARG"
+[[ -n "$PLATFORM" ]] && echo "    platform: $PLATFORM"
+echo "    dest:     $DEST"
 echo
 
-run() {
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    printf '  [dry-run]'
-    printf ' %q' "$@"
-    echo
-  else
-    "$@"
+# ── Stage 1: compute metadata (sha256, size, build_time, checksum sidecar) ───
+declare -a meta_args=()
+for m in "${META[@]:-}"; do
+  [[ -n "$m" ]] && meta_args+=(--meta "$m")
+done
+declare -a platform_args=()
+[[ -n "$PLATFORM" ]] && platform_args=(--platform "$PLATFORM")
+
+"$STAGES_DIR/compute-metadata.sh" \
+  --context     "$CONTEXT" \
+  --binary      "$BINARY" \
+  --name        "$NAME" \
+  --version     "$VERSION" \
+  --exe-suffix  "$EXE_SUFFIX" \
+  "${platform_args[@]}" \
+  "${meta_args[@]}"
+
+# Re-source after each stage so we pick up its outputs in this shell.
+# shellcheck source=/dev/null
+source "$CONTEXT"
+
+# ── Stage 2: sign the binary (Ed25519, no-op when --signing-key empty) ───────
+"$STAGES_DIR/sign-binary.sh" \
+  --context     "$CONTEXT" \
+  --binary      "$BINARY" \
+  --signing-key "$SIGNING_KEY" \
+  --openssl-bin "$OPENSSL_BIN"
+# shellcheck source=/dev/null
+source "$CONTEXT"
+
+# ── Stage 3: copy to GCS (binary + .sha256 [+ .sig]) for both URIs ───────────
+declare -a dry=()
+[[ "$DRY_RUN" -eq 1 ]] && dry=(--dry-run)
+
+copy_artifact_triple() {
+  # Uploads:  $1 (binary), $1.sha256, $1.sig (when signed) at the given URI.
+  local uri="$1"
+  "$STAGES_DIR/copy-to-gcs.sh" \
+    --source       "$BINARY" \
+    --destination  "$uri" \
+    --content-type application/octet-stream \
+    --metadata     "$META" \
+    "${dry[@]}"
+  "$STAGES_DIR/copy-to-gcs.sh" \
+    --source       "$CHECKSUM_FILE" \
+    --destination  "${uri}.sha256" \
+    --content-type text/plain \
+    "${dry[@]}"
+  if [[ -n "${SIGNATURE_FILE:-}" ]]; then
+    "$STAGES_DIR/copy-to-gcs.sh" \
+      --source       "$SIGNATURE_FILE" \
+      --destination  "${uri}.sig" \
+      --content-type application/octet-stream \
+      "${dry[@]}"
   fi
 }
 
 echo "==> Uploading versioned -> $VERSIONED"
-run gcloud storage cp --custom-metadata="$META_ARG" "$BINARY" "$VERSIONED"
-run gcloud storage cp --content-type="text/plain" "$CHECKSUM_FILE" "${VERSIONED}.sha256"
-if [[ -n "$SIGNATURE_FILE" ]]; then
-  run gcloud storage cp --content-type="application/octet-stream" "$SIGNATURE_FILE" "${VERSIONED}.sig"
-fi
+copy_artifact_triple "$VERSIONED"
 
 if [[ "$SKIP_STABLE" -eq 0 ]]; then
   echo "==> Uploading stable    -> $STABLE"
-  run gcloud storage cp --custom-metadata="$META_ARG" "$BINARY" "$STABLE"
-  run gcloud storage cp --content-type="text/plain" "$CHECKSUM_FILE" "${STABLE}.sha256"
-  if [[ -n "$SIGNATURE_FILE" ]]; then
-    run gcloud storage cp --content-type="application/octet-stream" "$SIGNATURE_FILE" "${STABLE}.sig"
-  fi
+  copy_artifact_triple "$STABLE"
 fi
 
-# --- Transparency log publication --------------------------------------------
-# After signing the binary, publish a signed log entry to the public
-# transparency log bucket. This closes the "signer was coerced" gap: every
-# release leaves a public, audit-trail-able record. Install scripts that fetch
-# the log entry can detect "the bucket has a signed binary that was never
-# logged" (a hallmark of off-the-record substitution).
-#
-# Entry layout:  by-sha256/<sha256>/<ISO-timestamp>.json{,.sig}
-# This keeps lookups O(1) for the gateway (LIST by-sha256/<sha>/) while
-# remaining publicly browsable by time within a hash.
-#
-# Skipped silently when:
-#   - signing is disabled (no signature → nothing meaningful to log)
-#   - --transparency-log "" was passed
-LOG_ENTRY_FILES=()
-log_publish() {
-  [[ -n "$SIGNATURE_FILE" ]] || return 0
-  [[ -n "$TRANSPARENCY_LOG" ]] || return 0
+# ── Stage 4: transparency log entry per URI ──────────────────────────────────
+"$STAGES_DIR/publish-transparency-log.sh" \
+  --context          "$CONTEXT" \
+  --artifact-uri     "$VERSIONED" \
+  --transparency-log "$TRANSPARENCY_LOG" \
+  "${dry[@]}"
 
-  local dest_path="$1"  # full gs:// URI of the artifact being logged
-
-  # Extract bucket name + relative path from gs://bucket/path/to/object.
-  local without_scheme="${dest_path#gs://}"
-  local lbucket="${without_scheme%%/*}"
-  local lpath="${without_scheme#*/}"
-
-  # Base64 the binary signature for the entry payload.
-  local sig_b64
-  sig_b64=$(base64 < "$SIGNATURE_FILE" | tr -d '\n')
-
-  # Canonical JSON — fixed key order, no spaces, no trailing newline.
-  # CHANGES here invalidate signatures of prior log entries; treat as a
-  # versioning event (bump "v"). Keep keys alphabetised after "v".
-  local entry_json
-  entry_json=$(printf '{"v":1,"bucket":"%s","path":"%s","sha256":"%s","sig":"%s","signer":"vexarr-release-v1","timestamp":"%s"}' \
-    "$lbucket" "$lpath" "$SHA256" "$sig_b64" "$BUILD_TIME")
-
-  local entry_file entry_sig_file
-  entry_file=$(mktemp)
-  entry_sig_file=$(mktemp)
-  LOG_ENTRY_FILES+=("$entry_file" "$entry_sig_file")
-  printf '%s' "$entry_json" > "$entry_file"
-
-  # Sign the canonical entry bytes with the same Ed25519 release key.
-  # Anyone with the embedded public key can later verify the entry was
-  # published by the legitimate signer (not forged into the log).
-  if ! "$OPENSSL_BIN" pkeyutl -sign -inkey "$SIGNING_KEY" -rawin -in "$entry_file" -out "$entry_sig_file" 2>/dev/null; then
-    echo "  WARN: failed to sign transparency log entry — skipping log publication" >&2
-    return 0
-  fi
-
-  # Sanitise timestamp for use in object names (replace ':' which is fine but
-  # awkward in URLs, leave the rest alone).
-  local ts_safe="${BUILD_TIME//:/}"
-  local prefix="by-sha256/${SHA256}"
-  local entry_uri="${TRANSPARENCY_LOG%/}/${prefix}/${ts_safe}.json"
-  local entry_sig_uri="${entry_uri}.sig"
-
-  echo "==> Publishing transparency log entry"
-  echo "    entry:    $entry_uri"
-  run gcloud storage cp --content-type="application/json" "$entry_file" "$entry_uri"
-  run gcloud storage cp --content-type="application/octet-stream" "$entry_sig_file" "$entry_sig_uri"
-}
-
-# Trap update — clean up log temp files + any Secret Manager-materialised key.
-trap 'rm -f "$CHECKSUM_FILE" "$SIGNATURE_FILE" "$RESOLVED_KEY_FILE" "${LOG_ENTRY_FILES[@]}"' EXIT
-
-# Publish entries for both versioned and stable paths so install scripts
-# fetching either can find a matching log record.
-log_publish "$VERSIONED"
-[[ "$SKIP_STABLE" -eq 0 ]] && log_publish "$STABLE"
+if [[ "$SKIP_STABLE" -eq 0 ]]; then
+  "$STAGES_DIR/publish-transparency-log.sh" \
+    --context          "$CONTEXT" \
+    --artifact-uri     "$STABLE" \
+    --transparency-log "$TRANSPARENCY_LOG" \
+    "${dry[@]}"
+fi
 
 echo
 echo "Done."
 sig_suffix=""
-[[ -n "$SIGNATURE_FILE" ]] && sig_suffix=" + .sig"
+[[ -n "${SIGNATURE_FILE:-}" ]] && sig_suffix=" + .sig"
 echo "  versioned: $VERSIONED  (+ .sha256${sig_suffix})"
 [[ "$SKIP_STABLE" -eq 0 ]] && echo "  stable:    $STABLE  (+ .sha256${sig_suffix})"
-if [[ -n "$SIGNATURE_FILE" && -n "$TRANSPARENCY_LOG" ]]; then
+if [[ -n "${SIGNATURE_FILE:-}" && -n "$TRANSPARENCY_LOG" ]]; then
   echo "  logged:    $TRANSPARENCY_LOG/by-sha256/${SHA256:0:12}…/${BUILD_TIME//:/}.json"
 fi
-[[ -z "$SIGNING_KEY" ]] && echo "  (unsigned — pass --signing-key or set VEXARR_SIGNING_KEY for Ed25519 signing)"
-# Explicit success exit. Without this the script's exit code is the exit of
-# the previous `[[ -z … ]] && echo` expression — which is 1 when signing IS
-# enabled (the && short-circuits because SIGNING_KEY is non-empty). Tools
-# that wrap this script (e.g. release-all-platforms.sh) would otherwise see
-# successful uploads as failures.
+if [[ -z "$SIGNING_KEY" ]]; then
+  echo "  (unsigned — pass --signing-key or set VEXARR_SIGNING_KEY for Ed25519 signing)"
+fi
+
+# Explicit success exit. Without this the script's exit code would be the
+# exit of the previous conditional (`[[ … ]] && echo`), which is 1 when the
+# condition is false. Tools that wrap this script (release-all-platforms.sh)
+# would otherwise see successful uploads as failures.
 exit 0
