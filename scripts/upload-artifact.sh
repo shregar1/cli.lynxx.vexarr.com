@@ -429,3 +429,9 @@ if [[ -n "$SIGNATURE_FILE" && -n "$TRANSPARENCY_LOG" ]]; then
   echo "  logged:    $TRANSPARENCY_LOG/by-sha256/${SHA256:0:12}…/${BUILD_TIME//:/}.json"
 fi
 [[ -z "$SIGNING_KEY" ]] && echo "  (unsigned — pass --signing-key or set VEXARR_SIGNING_KEY for Ed25519 signing)"
+# Explicit success exit. Without this the script's exit code is the exit of
+# the previous `[[ -z … ]] && echo` expression — which is 1 when signing IS
+# enabled (the && short-circuits because SIGNING_KEY is non-empty). Tools
+# that wrap this script (e.g. release-all-platforms.sh) would otherwise see
+# successful uploads as failures.
+exit 0
