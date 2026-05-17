@@ -12,6 +12,14 @@
 #   darwin/amd64   (x86_64-apple-darwin)
 #   darwin/arm64   (aarch64-apple-darwin)
 #   windows/amd64  (x86_64-pc-windows-gnu)
+#   windows/arm64  (aarch64-pc-windows-gnullvm)
+#
+# Note on Windows arm64: we use the `gnullvm` toolchain rather than `msvc`
+# because MSVC's `link.exe` only runs on Windows hosts, breaking cross-compile
+# from macOS/Linux. cargo-zigbuild bundles LLVM's lld which handles
+# aarch64-pc-windows-gnullvm transparently. If you need MSVC-compatible
+# binaries (e.g. for WinUI3 or strict driver-signing requirements), build
+# on a Windows host with the msvc target instead.
 
 set -euo pipefail
 
@@ -28,10 +36,10 @@ Usage:
     --version <str>            version tag, e.g. v0.1.0-abc1234.
                                (default: v$cargo_version-$git_short_sha)
     --platform <os/arch>       restrict to specific platforms (repeatable).
-                               If not given, all 5 in the default matrix run.
+                               If not given, all 6 in the default matrix run.
                                Allowed: linux/amd64, linux/arm64,
                                         darwin/amd64, darwin/arm64,
-                                        windows/amd64
+                                        windows/amd64, windows/arm64
     --no-build                 skip cargo build; just upload binaries that
                                already exist in target/<rust-target>/release/.
     --meta <key=value>         extra metadata for every upload (repeatable;
@@ -82,6 +90,11 @@ target_for_platform() {
     darwin/amd64)   echo "x86_64-apple-darwin" ;;
     darwin/arm64)   echo "aarch64-apple-darwin" ;;
     windows/amd64)  echo "x86_64-pc-windows-gnu" ;;
+    # Windows arm64 needs the `gnullvm` toolchain (not `msvc`) for
+    # cross-compile from non-Windows hosts. cargo-zigbuild handles it
+    # via bundled LLVM lld; rustc just needs the target installed:
+    #   rustup target add aarch64-pc-windows-gnullvm
+    windows/arm64)  echo "aarch64-pc-windows-gnullvm" ;;
     *)              return 1 ;;
   esac
 }
@@ -143,7 +156,7 @@ if [[ -z "$VERSION" ]]; then
   echo "  (auto-derived --version: $VERSION)"
 fi
 
-# Default to all 5 platforms when none specified.
+# Default to all 6 platforms when none specified.
 if [[ ${#PLATFORMS[@]} -eq 0 ]]; then
   PLATFORMS=(
     linux/amd64
@@ -151,6 +164,7 @@ if [[ ${#PLATFORMS[@]} -eq 0 ]]; then
     darwin/amd64
     darwin/arm64
     windows/amd64
+    windows/arm64
   )
 fi
 
@@ -158,7 +172,7 @@ fi
 # 15-minute build before we discover it.
 for p in "${PLATFORMS[@]}"; do
   target_for_platform "$p" >/dev/null 2>&1 || {
-    echo "unknown --platform: $p (allowed: linux/{amd64,arm64}, darwin/{amd64,arm64}, windows/amd64)" >&2
+    echo "unknown --platform: $p (allowed: linux/{amd64,arm64}, darwin/{amd64,arm64}, windows/{amd64,arm64})" >&2
     exit 1
   }
 done
