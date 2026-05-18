@@ -76,7 +76,7 @@ pub async fn cmd_exec(
     };
     println!(
         "{} {}  {}  {}",
-        bold(&method_parsed.to_string()),
+        bold(method_parsed.as_ref()),
         url,
         status_color(status),
         dim(&format!("({:.1}ms)", elapsed.as_secs_f64() * 1000.0)),

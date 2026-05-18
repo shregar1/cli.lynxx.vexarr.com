@@ -266,11 +266,7 @@ pub async fn cmd_acme_status(client: &Client, fmt: OutputFormat) -> Result<()> {
     }
     println!(
         "enabled: {}  has_cert: {}  http01: {}  tls-alpn01: {}",
-        if st.enabled {
-            green("yes")
-        } else {
-            dim("no")
-        },
+        if st.enabled { green("yes") } else { dim("no") },
         if st.has_cert.unwrap_or(false) {
             green("yes")
         } else {
@@ -333,9 +329,7 @@ pub async fn cmd_acme_set_tls_alpn01(
     key_authorization: String,
 ) -> Result<()> {
     let body = serde_json::json!({ "domain": domain, "key_authorization": key_authorization });
-    let _: Json = client
-        .post("/acme/tls-alpn-01-challenges", &body)
-        .await?;
+    let _: Json = client.post("/acme/tls-alpn-01-challenges", &body).await?;
     println!(
         "{} set TLS-ALPN-01 challenge for {}",
         green("\u{2713}"),
@@ -392,19 +386,12 @@ pub async fn cmd_live_config_set(
     if fmt != OutputFormat::Table {
         return emit(&result, fmt);
     }
-    println!(
-        "{} config set {} = {}",
-        green("\u{2713}"),
-        path,
-        value_str
-    );
+    println!("{} config set {} = {}", green("\u{2713}"), path, value_str);
     Ok(())
 }
 
 pub async fn cmd_live_config_lookup(client: &Client, tag: &str, fmt: OutputFormat) -> Result<()> {
-    let data: Json = client
-        .get(&format!("/admin/v1/config/@id/{tag}"))
-        .await?;
+    let data: Json = client.get(&format!("/admin/v1/config/@id/{tag}")).await?;
     if fmt != OutputFormat::Table {
         return emit(&data, fmt);
     }
@@ -417,8 +404,7 @@ pub async fn cmd_live_config_validate(
     body_str: &str,
     fmt: OutputFormat,
 ) -> Result<()> {
-    let body: Json =
-        serde_json::from_str(body_str).context("body must be valid JSON")?;
+    let body: Json = serde_json::from_str(body_str).context("body must be valid JSON")?;
     let result: Json = client.post("/admin/v1/config/validate", &body).await?;
     if fmt != OutputFormat::Table {
         return emit(&result, fmt);
@@ -565,9 +551,7 @@ pub async fn cmd_logs_list(
                 .map(|d| format!("{d}ms"))
                 .unwrap_or_else(|| "-".into());
             vec![
-                l.ts.with_timezone(&Local)
-                    .format("%H:%M:%S")
-                    .to_string(),
+                l.ts.with_timezone(&Local).format("%H:%M:%S").to_string(),
                 l.level.clone(),
                 l.method.clone().unwrap_or_default(),
                 l.path.clone().unwrap_or_default(),

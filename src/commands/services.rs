@@ -114,7 +114,14 @@ pub async fn cmd_services_update(
         body["subdomain"] = Json::String(s);
     }
     let updated: Service = client.put(&format!("/services/{}", svc.id), &body).await?;
-    emit_success(&updated, fmt, "updated", "service", &updated.name, &updated.id)
+    emit_success(
+        &updated,
+        fmt,
+        "updated",
+        "service",
+        &updated.name,
+        &updated.id,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -163,5 +170,12 @@ pub async fn cmd_services_patch(
     let updated: Service = client
         .patch_json(&format!("/services/{}", svc.id), &Json::Object(body))
         .await?;
-    emit_success(&updated, fmt, "patched", "service", &updated.name, &updated.id)
+    emit_success(
+        &updated,
+        fmt,
+        "patched",
+        "service",
+        &updated.name,
+        &updated.id,
+    )
 }

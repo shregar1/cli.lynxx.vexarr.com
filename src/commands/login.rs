@@ -69,7 +69,10 @@ pub async fn cmd_login(input: LoginInput) -> Result<()> {
         bold(&me.email),
         me.tier,
     );
-    println!("{}", dim(&format!("  credentials saved to {}", path.display())));
+    println!(
+        "{}",
+        dim(&format!("  credentials saved to {}", path.display()))
+    );
     Ok(())
 }
 
@@ -83,7 +86,7 @@ fn prompt_api_key() -> Result<String> {
              or run interactively to be prompted"
         );
     }
-    let key = rpassword::prompt_password("Lynxx API key: ")
-        .context("reading API key from stdin")?;
+    let key =
+        rpassword::prompt_password("Lynxx API key: ").context("reading API key from stdin")?;
     Ok(key.trim().to_string())
 }

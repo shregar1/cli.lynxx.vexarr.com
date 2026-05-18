@@ -49,7 +49,14 @@ pub async fn cmd_consumers_create(
 ) -> Result<()> {
     let body = serde_json::json!({ "username": username, "custom_id": custom_id });
     let consumer: Consumer = client.post("/consumers", &body).await?;
-    emit_success(&consumer, fmt, "created", "consumer", &consumer.username, &consumer.id)
+    emit_success(
+        &consumer,
+        fmt,
+        "created",
+        "consumer",
+        &consumer.username,
+        &consumer.id,
+    )
 }
 
 pub async fn cmd_consumers_delete(client: &Client, ident: &str) -> Result<()> {
@@ -76,9 +83,7 @@ pub async fn cmd_targets_list(
     let targets: Vec<Target> = match &service {
         Some(s) => {
             let svc = resolve_service(client, s).await?;
-            client
-                .get(&format!("/services/{}/targets", svc.id))
-                .await?
+            client.get(&format!("/services/{}/targets", svc.id)).await?
         }
         None => client.get("/targets").await?,
     };
@@ -156,18 +161,10 @@ pub async fn cmd_tokens_list(client: &Client, fmt: OutputFormat) -> Result<()> {
                     .format("%Y-%m-%d %H:%M")
                     .to_string(),
                 t.expires_at
-                    .map(|e| {
-                        e.with_timezone(&Local)
-                            .format("%Y-%m-%d %H:%M")
-                            .to_string()
-                    })
+                    .map(|e| e.with_timezone(&Local).format("%Y-%m-%d %H:%M").to_string())
                     .unwrap_or_else(|| "never".into()),
                 t.last_used_at
-                    .map(|u| {
-                        u.with_timezone(&Local)
-                            .format("%Y-%m-%d %H:%M")
-                            .to_string()
-                    })
+                    .map(|u| u.with_timezone(&Local).format("%Y-%m-%d %H:%M").to_string())
                     .unwrap_or_else(|| "-".into()),
             ]
         })
@@ -235,7 +232,14 @@ pub async fn cmd_tokens_update(
     let updated: AdminTokenView = client
         .put(&format!("/tokens/{}", tok.id), &Json::Object(body))
         .await?;
-    emit_success(&updated, fmt, "updated", "token", &updated.name, &updated.id)
+    emit_success(
+        &updated,
+        fmt,
+        "updated",
+        "token",
+        &updated.name,
+        &updated.id,
+    )
 }
 
 pub async fn cmd_tokens_delete(client: &Client, ident: &str) -> Result<()> {
@@ -290,7 +294,14 @@ pub async fn cmd_projects_create(
 ) -> Result<()> {
     let body = serde_json::json!({ "name": name, "description": description });
     let project: Project = client.post("/projects", &body).await?;
-    emit_success(&project, fmt, "created", "project", &project.name, &project.id)
+    emit_success(
+        &project,
+        fmt,
+        "created",
+        "project",
+        &project.name,
+        &project.id,
+    )
 }
 
 pub async fn cmd_projects_update(
@@ -314,14 +325,19 @@ pub async fn cmd_projects_update(
     let updated: Project = client
         .patch_json(&format!("/projects/{}", project.id), &Json::Object(body))
         .await?;
-    emit_success(&updated, fmt, "updated", "project", &updated.name, &updated.id)
+    emit_success(
+        &updated,
+        fmt,
+        "updated",
+        "project",
+        &updated.name,
+        &updated.id,
+    )
 }
 
 pub async fn cmd_projects_delete(client: &Client, ident: &str) -> Result<()> {
     let project = resolve_project(client, ident).await?;
-    client
-        .delete(&format!("/projects/{}", project.id))
-        .await?;
+    client.delete(&format!("/projects/{}", project.id)).await?;
     println!(
         "{} deleted project {} ({})",
         green("\u{2713}"),
@@ -331,11 +347,7 @@ pub async fn cmd_projects_delete(client: &Client, ident: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn cmd_projects_services(
-    client: &Client,
-    ident: &str,
-    fmt: OutputFormat,
-) -> Result<()> {
+pub async fn cmd_projects_services(client: &Client, ident: &str, fmt: OutputFormat) -> Result<()> {
     let project = resolve_project(client, ident).await?;
     let services: Vec<Service> = client
         .get(&format!("/projects/{}/services", project.id))

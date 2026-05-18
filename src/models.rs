@@ -145,9 +145,10 @@ pub struct ResponseDiff {
     pub body_diff: BodyDiff,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BodyDiff {
+    #[default]
     Identical,
     BinaryDiff {
         before_bytes: usize,
@@ -161,12 +162,6 @@ pub enum BodyDiff {
     TextDiff {
         lines_changed: u32,
     },
-}
-
-impl Default for BodyDiff {
-    fn default() -> Self {
-        BodyDiff::Identical
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

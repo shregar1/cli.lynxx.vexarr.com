@@ -25,7 +25,11 @@ pub fn color_enabled_stderr() -> bool {
 
 /// Common ANSI escape wrapper.  `stderr` selects which TTY check to use.
 fn ansi(code: &str, s: &str, stderr: bool) -> String {
-    if if stderr { color_enabled_stderr() } else { color_enabled() } {
+    if if stderr {
+        color_enabled_stderr()
+    } else {
+        color_enabled()
+    } {
         format!("\x1b[{code}m{s}\x1b[0m")
     } else {
         s.to_string()
@@ -159,13 +163,16 @@ pub fn levenshtein(a: &str, b: &str) -> usize {
     prev[n]
 }
 
-pub fn fuzzy_suggest<'a>(needle: &str, haystack: impl IntoIterator<Item = &'a str>) -> Option<String> {
+pub fn fuzzy_suggest<'a>(
+    needle: &str,
+    haystack: impl IntoIterator<Item = &'a str>,
+) -> Option<String> {
     let n_lower = needle.to_lowercase();
     let mut best: Option<(usize, &str)> = None;
     for cand in haystack {
         let d = levenshtein(&n_lower, &cand.to_lowercase());
         let threshold = (cand.len() / 3).max(2);
-        if d <= threshold && best.map_or(true, |(bd, _)| d < bd) {
+        if d <= threshold && best.is_none_or(|(bd, _)| d < bd) {
             best = Some((d, cand));
         }
     }

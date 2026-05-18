@@ -187,7 +187,7 @@ pub async fn cmd_apply(
     dry_run: bool,
     auto_approve: bool,
 ) -> Result<()> {
-    let raw = if file == PathBuf::from("-") {
+    let raw = if file == std::path::Path::new("-") {
         let mut buf = String::new();
         io::stdin().read_to_string(&mut buf)?;
         buf
@@ -218,8 +218,7 @@ pub async fn apply_state(
         .iter()
         .map(|s| (s.id, s.name.clone()))
         .collect();
-    let want_svc_names: HashSet<&str> =
-        desired.services.iter().map(|s| s.name.as_str()).collect();
+    let want_svc_names: HashSet<&str> = desired.services.iter().map(|s| s.name.as_str()).collect();
 
     let mut plan: Vec<PlanEntry> = Vec::new();
 
@@ -675,12 +674,13 @@ pub async fn apply_one(
             route_paths,
             config,
         } => {
-            let service_id = match service {
-                Some(s) => Some(svc_id_by_name.get(s).copied().ok_or_else(|| {
-                    anyhow!("plugin {name} references unknown service '{s}'")
-                })?),
-                None => None,
-            };
+            let service_id =
+                match service {
+                    Some(s) => Some(svc_id_by_name.get(s).copied().ok_or_else(|| {
+                        anyhow!("plugin {name} references unknown service '{s}'")
+                    })?),
+                    None => None,
+                };
             let route_id = match route_paths {
                 Some(ps) => {
                     let mut ps2 = ps.clone();
@@ -708,7 +708,7 @@ pub async fn apply_one(
 // ---------------------------------------------------------------------------
 
 pub async fn cmd_validate(client: &Client, file: PathBuf) -> Result<()> {
-    let raw = if file == PathBuf::from("-") {
+    let raw = if file == std::path::Path::new("-") {
         let mut buf = String::new();
         io::stdin().read_to_string(&mut buf)?;
         buf

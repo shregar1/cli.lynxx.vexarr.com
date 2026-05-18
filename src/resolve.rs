@@ -44,7 +44,7 @@ pub async fn resolve_by_field<T: Clone>(
         n if n > 1 => Err(anyhow!("'{ident}' is ambiguous ({n} matches)")),
         _ => {
             // 4) Fuzzy suggest on name.
-            let suggest = fuzzy_suggest(ident, items.iter().map(|i| name_fn(i)));
+            let suggest = fuzzy_suggest(ident, items.iter().map(name_fn));
             match suggest {
                 Some(s) => Err(anyhow!("no {kind} matched '{ident}'. Did you mean: {s}?")),
                 None => Err(anyhow!("no {kind} matched '{ident}'")),

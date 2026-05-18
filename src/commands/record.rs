@@ -210,10 +210,7 @@ pub fn render_replay_diff(r: &ReplayResult) {
             }
         }
         BodyDiff::TextDiff { lines_changed } => {
-            println!(
-                "  {} body diff: {lines_changed} lines changed",
-                yellow("~")
-            );
+            println!("  {} body diff: {lines_changed} lines changed", yellow("~"));
         }
         BodyDiff::BinaryDiff {
             before_bytes,

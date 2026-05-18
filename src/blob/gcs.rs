@@ -61,8 +61,7 @@ impl GcsStore {
         });
 
         let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
-        let encoding_key =
-            jsonwebtoken::EncodingKey::from_rsa_pem(key.private_key.as_bytes())?;
+        let encoding_key = jsonwebtoken::EncodingKey::from_rsa_pem(key.private_key.as_bytes())?;
         let jwt = jsonwebtoken::encode(&header, &claims, &encoding_key)?;
 
         let resp: TokenResponse = Client::new()

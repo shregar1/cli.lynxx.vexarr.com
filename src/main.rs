@@ -91,7 +91,6 @@ async fn cmd_status(client: &Client, fmt: OutputFormat) -> Result<()> {
     emit(&s, fmt)
 }
 
-
 async fn cmd_import(
     client: &Client,
     spec_src: String,
@@ -185,7 +184,10 @@ async fn cmd_analytics_traffic(
                 ]
             })
             .collect();
-        print_table(&["TIMESTAMP", "REQUESTS", "ERRORS", "AVG_MS", "P99_MS"], &rows);
+        print_table(
+            &["TIMESTAMP", "REQUESTS", "ERRORS", "AVG_MS", "P99_MS"],
+            &rows,
+        );
     } else {
         println!("{}", serde_json::to_string_pretty(&data)?);
     }
@@ -251,15 +253,9 @@ async fn cmd_analytics_rate_limit_stats(
     Ok(())
 }
 
-async fn cmd_analytics_geo(
-    client: &Client,
-    service: &str,
-    fmt: OutputFormat,
-) -> Result<()> {
+async fn cmd_analytics_geo(client: &Client, service: &str, fmt: OutputFormat) -> Result<()> {
     let svc = resolve_service(client, service).await?;
-    let data: Json = client
-        .get(&format!("/services/{}/geo", svc.id))
-        .await?;
+    let data: Json = client.get(&format!("/services/{}/geo", svc.id)).await?;
     if fmt != OutputFormat::Table {
         return emit(&data, fmt);
     }
@@ -296,9 +292,7 @@ async fn cmd_analytics_geo(
 
 async fn cmd_probes_list(client: &Client, service: &str, fmt: OutputFormat) -> Result<()> {
     let svc = resolve_service(client, service).await?;
-    let data: Json = client
-        .get(&format!("/services/{}/probes", svc.id))
-        .await?;
+    let data: Json = client.get(&format!("/services/{}/probes", svc.id)).await?;
     if fmt != OutputFormat::Table {
         return emit(&data, fmt);
     }
@@ -335,7 +329,10 @@ async fn cmd_probes_list(client: &Client, service: &str, fmt: OutputFormat) -> R
                 ]
             })
             .collect();
-        print_table(&["ID", "NAME", "METHOD", "PATH", "ENABLED", "INTERVAL"], &rows);
+        print_table(
+            &["ID", "NAME", "METHOD", "PATH", "ENABLED", "INTERVAL"],
+            &rows,
+        );
     } else {
         println!("{}", serde_json::to_string_pretty(&data)?);
     }
@@ -464,7 +461,10 @@ async fn cmd_probes_results(client: &Client, id: &str, fmt: OutputFormat) -> Res
                 ]
             })
             .collect();
-        print_table(&["CHECKED_AT", "STATUS", "LATENCY_MS", "RESULT", "ERROR"], &rows);
+        print_table(
+            &["CHECKED_AT", "STATUS", "LATENCY_MS", "RESULT", "ERROR"],
+            &rows,
+        );
     } else {
         println!("{}", serde_json::to_string_pretty(&data)?);
     }
@@ -547,7 +547,10 @@ async fn cmd_snapshots_diff(
 ) -> Result<()> {
     let svc = resolve_service(client, service).await?;
     let data: Json = client
-        .get(&format!("/services/{}/snapshots/{}/diff", svc.id, snapshot_id))
+        .get(&format!(
+            "/services/{}/snapshots/{}/diff",
+            svc.id, snapshot_id
+        ))
         .await?;
     if fmt != OutputFormat::Table {
         return emit(&data, fmt);
@@ -581,10 +584,7 @@ async fn cmd_snapshots_rollback(
 async fn cmd_snapshots_delete(client: &Client, service: &str, snapshot_id: &str) -> Result<()> {
     let svc = resolve_service(client, service).await?;
     client
-        .delete(&format!(
-            "/services/{}/snapshots/{}",
-            svc.id, snapshot_id
-        ))
+        .delete(&format!("/services/{}/snapshots/{}", svc.id, snapshot_id))
         .await?;
     println!("{} deleted snapshot {}", green("✓"), snapshot_id);
     Ok(())
@@ -596,9 +596,7 @@ async fn cmd_snapshots_delete(client: &Client, service: &str, snapshot_id: &str)
 
 async fn cmd_alerts_list(client: &Client, service: &str, fmt: OutputFormat) -> Result<()> {
     let svc = resolve_service(client, service).await?;
-    let data: Json = client
-        .get(&format!("/services/{}/alerts", svc.id))
-        .await?;
+    let data: Json = client.get(&format!("/services/{}/alerts", svc.id)).await?;
     if fmt != OutputFormat::Table {
         return emit(&data, fmt);
     }
@@ -635,7 +633,10 @@ async fn cmd_alerts_list(client: &Client, service: &str, fmt: OutputFormat) -> R
                 ]
             })
             .collect();
-        print_table(&["ID", "NAME", "METRIC", "OPERATOR", "THRESHOLD", "ENABLED"], &rows);
+        print_table(
+            &["ID", "NAME", "METRIC", "OPERATOR", "THRESHOLD", "ENABLED"],
+            &rows,
+        );
     } else {
         println!("{}", serde_json::to_string_pretty(&data)?);
     }
@@ -765,7 +766,10 @@ async fn cmd_alerts_events(client: &Client, service: &str, fmt: OutputFormat) ->
                 ]
             })
             .collect();
-        print_table(&["ID", "RULE", "METRIC", "VALUE", "FIRED_AT", "RESOLVED"], &rows);
+        print_table(
+            &["ID", "RULE", "METRIC", "VALUE", "FIRED_AT", "RESOLVED"],
+            &rows,
+        );
     } else {
         println!("{}", serde_json::to_string_pretty(&data)?);
     }
@@ -781,9 +785,7 @@ async fn cmd_alerts_resolve(client: &Client, id: &str) -> Result<()> {
 }
 
 async fn cmd_alerts_test(client: &Client, id: &str) -> Result<()> {
-    let _: Json = client
-        .post_empty(&format!("/alerts/{id}/test"))
-        .await?;
+    let _: Json = client.post_empty(&format!("/alerts/{id}/test")).await?;
     println!("{} fired test alert for rule {}", green("✓"), id);
     Ok(())
 }
@@ -833,7 +835,10 @@ async fn cmd_ip_rules_list(client: &Client, service: &str, fmt: OutputFormat) ->
                 ]
             })
             .collect();
-        print_table(&["ID", "CIDR", "ACTION", "DESCRIPTION", "PRIORITY", "ENABLED"], &rows);
+        print_table(
+            &["ID", "CIDR", "ACTION", "DESCRIPTION", "PRIORITY", "ENABLED"],
+            &rows,
+        );
     } else {
         println!("{}", serde_json::to_string_pretty(&data)?);
     }
@@ -994,8 +999,7 @@ async fn cmd_error_pages_create(
 ) -> Result<()> {
     let svc = resolve_service(client, service).await?;
     let actual_body = if let Some(path) = body_content.strip_prefix('@') {
-        std::fs::read_to_string(path)
-            .with_context(|| format!("failed to read {}", path))?
+        std::fs::read_to_string(path).with_context(|| format!("failed to read {}", path))?
     } else {
         body_content
     };
@@ -1035,8 +1039,7 @@ async fn cmd_error_pages_patch(
     }
     if let Some(v) = body_content {
         let actual = if let Some(path) = v.strip_prefix('@') {
-            std::fs::read_to_string(path)
-                .with_context(|| format!("failed to read {}", path))?
+            std::fs::read_to_string(path).with_context(|| format!("failed to read {}", path))?
         } else {
             v
         };
@@ -1069,11 +1072,7 @@ async fn cmd_error_pages_delete(client: &Client, id: &str) -> Result<()> {
 // Consumer Groups
 // ---------------------------------------------------------------------------
 
-async fn cmd_consumer_groups_list(
-    client: &Client,
-    service: &str,
-    fmt: OutputFormat,
-) -> Result<()> {
+async fn cmd_consumer_groups_list(client: &Client, service: &str, fmt: OutputFormat) -> Result<()> {
     let svc = resolve_service(client, service).await?;
     let data: Json = client
         .get(&format!("/services/{}/consumer-groups", svc.id))
@@ -1109,7 +1108,10 @@ async fn cmd_consumer_groups_list(
                 ]
             })
             .collect();
-        print_table(&["ID", "NAME", "DESCRIPTION", "RATE_LIMIT", "WINDOW"], &rows);
+        print_table(
+            &["ID", "NAME", "DESCRIPTION", "RATE_LIMIT", "WINDOW"],
+            &rows,
+        );
     } else {
         println!("{}", serde_json::to_string_pretty(&data)?);
     }
@@ -1192,11 +1194,7 @@ async fn cmd_consumer_groups_delete(client: &Client, id: &str) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_consumer_groups_members(
-    client: &Client,
-    id: &str,
-    fmt: OutputFormat,
-) -> Result<()> {
+async fn cmd_consumer_groups_members(client: &Client, id: &str, fmt: OutputFormat) -> Result<()> {
     let data: Json = client
         .get(&format!("/consumer-groups/{id}/members"))
         .await?;
@@ -1271,9 +1269,7 @@ async fn cmd_consumer_groups_remove_member(
 }
 
 async fn cmd_consumer_groups_usage(client: &Client, id: &str, fmt: OutputFormat) -> Result<()> {
-    let data: Json = client
-        .get(&format!("/consumer-groups/{id}/usage"))
-        .await?;
+    let data: Json = client.get(&format!("/consumer-groups/{id}/usage")).await?;
     if fmt != OutputFormat::Table {
         return emit(&data, fmt);
     }
@@ -1287,9 +1283,7 @@ async fn cmd_consumer_groups_usage(client: &Client, id: &str, fmt: OutputFormat)
 
 async fn cmd_graph(client: &Client, service: &str, fmt: OutputFormat) -> Result<()> {
     let svc = resolve_service(client, service).await?;
-    let data: Json = client
-        .get(&format!("/services/{}/graph", svc.id))
-        .await?;
+    let data: Json = client.get(&format!("/services/{}/graph", svc.id)).await?;
     if fmt != OutputFormat::Table {
         return emit(&data, fmt);
     }
@@ -1304,9 +1298,7 @@ async fn cmd_graph(client: &Client, service: &str, fmt: OutputFormat) -> Result<
 
 async fn cmd_docs_show(client: &Client, service: &str, fmt: OutputFormat) -> Result<()> {
     let svc = resolve_service(client, service).await?;
-    let data: Json = client
-        .get(&format!("/services/{}/docs", svc.id))
-        .await?;
+    let data: Json = client.get(&format!("/services/{}/docs", svc.id)).await?;
     if fmt != OutputFormat::Table {
         return emit(&data, fmt);
     }
@@ -1342,10 +1334,7 @@ async fn cmd_docs_try(
             .and_then(|v| v.as_i64())
             .map(|v| v.to_string())
             .unwrap_or_default();
-        let resp_body = result
-            .get("body")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let resp_body = result.get("body").and_then(|v| v.as_str()).unwrap_or("");
         println!("{} {} {}", green("✓"), method, url);
         println!("Status: {}", status);
         if !resp_body.is_empty() {
@@ -1388,10 +1377,7 @@ async fn cmd_proxy_replay(
             .and_then(|v| v.as_i64())
             .map(|v| v.to_string())
             .unwrap_or_default();
-        let resp_body = result
-            .get("body")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let resp_body = result.get("body").and_then(|v| v.as_str()).unwrap_or("");
         println!("{} {} {}", green("✓"), method, url);
         println!("Status: {}", status);
         if !resp_body.is_empty() {
@@ -1406,7 +1392,6 @@ async fn cmd_proxy_replay(
 // ---------------------------------------------------------------------------
 // Entrypoint
 // ---------------------------------------------------------------------------
-
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -1434,18 +1419,12 @@ async fn main() -> ExitCode {
     let api_key = cli.api_key.clone().or_else(|| local.api_key.clone());
 
     // Resolve Lynxx platform: base URL, license key, secret key.
-    let _base_url = cli
-        .base_url
-        .clone()
-        .or_else(|| local.base_url.clone());
+    let _base_url = cli.base_url.clone().or_else(|| local.base_url.clone());
     let _license_key = cli
         .license_key
         .clone()
         .or_else(|| local.license_key.clone());
-    let _secret_key = cli
-        .secret_key
-        .clone()
-        .or_else(|| local.secret_key.clone());
+    let _secret_key = cli.secret_key.clone().or_else(|| local.secret_key.clone());
 
     // Resolve telemetry: --telemetry-url > LYNXX_TELEMETRY_URL > config file.
     let _telemetry_url = cli
@@ -1458,7 +1437,7 @@ async fn main() -> ExitCode {
         .or_else(|| local.telemetry_api_key.clone());
 
     // Resolve output format: --output > config file > Table.
-    let output = cli.output.unwrap_or_else(|| match local.output.as_deref() {
+    let output = cli.output.unwrap_or(match local.output.as_deref() {
         Some("json") => OutputFormat::Json,
         Some("yaml") => OutputFormat::Yaml,
         _ => OutputFormat::Table,
@@ -1481,9 +1460,7 @@ async fn main() -> ExitCode {
                 description,
             } => cmd_projects_update(&client, &ident, name, description, output).await,
             ProjectsCmd::Delete { ident } => cmd_projects_delete(&client, &ident).await,
-            ProjectsCmd::Services { ident } => {
-                cmd_projects_services(&client, &ident, output).await
-            }
+            ProjectsCmd::Services { ident } => cmd_projects_services(&client, &ident, output).await,
         },
         Cmd::Services(s) => match s {
             ServicesCmd::List => cmd_services_list(&client, output).await,
@@ -1737,9 +1714,7 @@ async fn main() -> ExitCode {
                 )
                 .await
             }
-            DeployCmd::Status { service } => {
-                cmd_deploy_status(&client, &service, output).await
-            }
+            DeployCmd::Status { service } => cmd_deploy_status(&client, &service, output).await,
         },
         Cmd::Quota => cmd_quota(&client, output).await,
         Cmd::Upstreams => cmd_upstreams(&client, output).await,
@@ -1757,9 +1732,7 @@ async fn main() -> ExitCode {
                 domain,
                 key_authorization,
             } => cmd_acme_set_tls_alpn01(&client, domain, key_authorization).await,
-            AcmeCmd::ClearTlsAlpn01 { domain } => {
-                cmd_acme_clear_tls_alpn01(&client, &domain).await
-            }
+            AcmeCmd::ClearTlsAlpn01 { domain } => cmd_acme_clear_tls_alpn01(&client, &domain).await,
         },
         Cmd::Debug(d) => {
             let endpoint = match d {
@@ -1780,9 +1753,7 @@ async fn main() -> ExitCode {
                 cmd_live_config_validate(&client, &body, output).await
             }
             LiveConfigCmd::History => cmd_live_config_history(&client, output).await,
-            LiveConfigCmd::Lookup { tag } => {
-                cmd_live_config_lookup(&client, &tag, output).await
-            }
+            LiveConfigCmd::Lookup { tag } => cmd_live_config_lookup(&client, &tag, output).await,
         },
         Cmd::Health => cmd_health(&client, output).await,
         Cmd::Reload => cmd_reload(&client).await,
@@ -1850,14 +1821,10 @@ async fn main() -> ExitCode {
             AnalyticsCmd::RateLimitStats { service } => {
                 cmd_analytics_rate_limit_stats(&client, &service, output).await
             }
-            AnalyticsCmd::Geo { service } => {
-                cmd_analytics_geo(&client, &service, output).await
-            }
+            AnalyticsCmd::Geo { service } => cmd_analytics_geo(&client, &service, output).await,
         },
         Cmd::Probes(p) => match p {
-            ProbesCmd::List { service } => {
-                cmd_probes_list(&client, &service, output).await
-            }
+            ProbesCmd::List { service } => cmd_probes_list(&client, &service, output).await,
             ProbesCmd::Create {
                 service,
                 name,
@@ -1907,17 +1874,11 @@ async fn main() -> ExitCode {
                 .await
             }
             ProbesCmd::Delete { id } => cmd_probes_delete(&client, &id).await,
-            ProbesCmd::Results { id } => {
-                cmd_probes_results(&client, &id, output).await
-            }
-            ProbesCmd::Stats { id } => {
-                cmd_probes_stats(&client, &id, output).await
-            }
+            ProbesCmd::Results { id } => cmd_probes_results(&client, &id, output).await,
+            ProbesCmd::Stats { id } => cmd_probes_stats(&client, &id, output).await,
         },
         Cmd::Snapshots(s) => match s {
-            SnapshotsCmd::List { service } => {
-                cmd_snapshots_list(&client, &service, output).await
-            }
+            SnapshotsCmd::List { service } => cmd_snapshots_list(&client, &service, output).await,
             SnapshotsCmd::Create { service, name } => {
                 cmd_snapshots_create(&client, &service, name, output).await
             }
@@ -1935,9 +1896,7 @@ async fn main() -> ExitCode {
             } => cmd_snapshots_delete(&client, &service, &snapshot_id).await,
         },
         Cmd::Alerts(a) => match a {
-            AlertsCmd::List { service } => {
-                cmd_alerts_list(&client, &service, output).await
-            }
+            AlertsCmd::List { service } => cmd_alerts_list(&client, &service, output).await,
             AlertsCmd::Create {
                 service,
                 name,
@@ -1949,16 +1908,8 @@ async fn main() -> ExitCode {
                 channels,
             } => {
                 cmd_alerts_create(
-                    &client,
-                    &service,
-                    name,
-                    metric,
-                    operator,
-                    threshold,
-                    window,
-                    cooldown,
-                    channels,
-                    output,
+                    &client, &service, name, metric, operator, threshold, window, cooldown,
+                    channels, output,
                 )
                 .await
             }
@@ -1970,20 +1921,18 @@ async fn main() -> ExitCode {
                 window,
                 cooldown,
             } => {
-                cmd_alerts_patch(&client, &id, enabled, name, threshold, window, cooldown, output)
-                    .await
+                cmd_alerts_patch(
+                    &client, &id, enabled, name, threshold, window, cooldown, output,
+                )
+                .await
             }
             AlertsCmd::Delete { id } => cmd_alerts_delete(&client, &id).await,
-            AlertsCmd::Events { service } => {
-                cmd_alerts_events(&client, &service, output).await
-            }
+            AlertsCmd::Events { service } => cmd_alerts_events(&client, &service, output).await,
             AlertsCmd::Resolve { id } => cmd_alerts_resolve(&client, &id).await,
             AlertsCmd::Test { id } => cmd_alerts_test(&client, &id).await,
         },
         Cmd::IpRules(r) => match r {
-            IpRulesCmd::List { service } => {
-                cmd_ip_rules_list(&client, &service, output).await
-            }
+            IpRulesCmd::List { service } => cmd_ip_rules_list(&client, &service, output).await,
             IpRulesCmd::Create {
                 service,
                 cidr,
@@ -2094,9 +2043,7 @@ async fn main() -> ExitCode {
                 )
                 .await
             }
-            ConsumerGroupsCmd::Delete { id } => {
-                cmd_consumer_groups_delete(&client, &id).await
-            }
+            ConsumerGroupsCmd::Delete { id } => cmd_consumer_groups_delete(&client, &id).await,
             ConsumerGroupsCmd::Members { id } => {
                 cmd_consumer_groups_members(&client, &id, output).await
             }
@@ -2112,9 +2059,7 @@ async fn main() -> ExitCode {
         },
         Cmd::Graph { service } => cmd_graph(&client, &service, output).await,
         Cmd::Docs(d) => match d {
-            DocsCmd::Show { service } => {
-                cmd_docs_show(&client, &service, output).await
-            }
+            DocsCmd::Show { service } => cmd_docs_show(&client, &service, output).await,
             DocsCmd::Try {
                 method,
                 url,
@@ -2183,4 +2128,3 @@ async fn main() -> ExitCode {
         }
     }
 }
-

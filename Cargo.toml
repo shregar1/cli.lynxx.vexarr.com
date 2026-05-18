@@ -1,9 +1,15 @@
 [package]
 name = "lynxx-cli"
-version = "0.1.0"
+version = "0.9.0"
 edition = "2021"
 license = "Proprietary"
 description = "Declarative CLI for the Lynxx gateway"
+
+# Lint policy. See ../gateway.lynxx.vexarr.com/Cargo.toml for the rationale
+# pattern — clap-derived subcommand handlers naturally take many args.
+[lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"
 
 [[bin]]
 name = "lynxx"

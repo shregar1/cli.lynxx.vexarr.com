@@ -66,11 +66,6 @@ pub async fn cmd_whoami(input: WhoamiInput) -> Result<()> {
     println!("{:<10}{}", bold("Customer:"), me.customer_urn);
     println!("{:<10}{}", bold("Email:"), me.email);
     println!("{:<10}{}", bold("Tier:"), me.tier);
-    println!(
-        "{:<10}{} / {}",
-        bold("Nodes:"),
-        me.active_nodes,
-        nodes_cap,
-    );
+    println!("{:<10}{} / {}", bold("Nodes:"), me.active_nodes, nodes_cap,);
     Ok(())
 }

@@ -22,8 +22,8 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::client::Client;
 use crate::cli::OutputFormat;
+use crate::client::Client;
 use crate::models::{PluginInstance, Service};
 use crate::output::{emit, fmt_id, green};
 use crate::resolve::resolve_service;
@@ -45,17 +45,11 @@ pub(crate) async fn service_name_map(client: &Client) -> HashMap<Uuid, String> {
 /// `"route:ab12cd34"`, `"global"`).
 ///
 /// Used by plugins-list, wasm-list, and scripts-list.
-pub(crate) fn plugin_scope_label(
-    p: &PluginInstance,
-    svc_names: &HashMap<Uuid, String>,
-) -> String {
+pub(crate) fn plugin_scope_label(p: &PluginInstance, svc_names: &HashMap<Uuid, String>) -> String {
     match (p.service_id, p.route_id) {
         (Some(s), _) => format!(
             "service:{}",
-            svc_names
-                .get(&s)
-                .cloned()
-                .unwrap_or_else(|| fmt_id(&s)),
+            svc_names.get(&s).cloned().unwrap_or_else(|| fmt_id(&s)),
         ),
         (_, Some(r)) => format!("route:{}", fmt_id(&r)),
         _ => "global".into(),

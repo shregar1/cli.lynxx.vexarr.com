@@ -1,6 +1,6 @@
-pub mod s3;
-pub mod gcs;
 pub mod azure;
+pub mod gcs;
+pub mod s3;
 
 use std::path::Path;
 
@@ -31,8 +31,8 @@ pub enum StoreConfig {
 
 impl StoreConfig {
     pub fn from_env() -> Result<Self> {
-        let provider = std::env::var("BLOB_PROVIDER")
-            .context("BLOB_PROVIDER not set (s3|gcs|azure)")?;
+        let provider =
+            std::env::var("BLOB_PROVIDER").context("BLOB_PROVIDER not set (s3|gcs|azure)")?;
 
         match provider.as_str() {
             "s3" => Ok(Self::S3 {
@@ -58,9 +58,7 @@ impl StoreConfig {
 
     pub async fn build(self) -> Result<Box<dyn BlobStore>> {
         match self {
-            Self::S3 { bucket, region } => {
-                Ok(Box::new(s3::S3Store::new(&bucket, &region).await))
-            }
+            Self::S3 { bucket, region } => Ok(Box::new(s3::S3Store::new(&bucket, &region).await)),
             Self::Gcs {
                 bucket,
                 credentials_path,

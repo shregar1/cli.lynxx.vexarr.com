@@ -395,7 +395,9 @@ pub enum ServicesCmd {
 pub enum RoutesCmd {
     List,
     /// Show a single route by id
-    Get { id: String },
+    Get {
+        id: String,
+    },
     Create {
         #[arg(long)]
         service: String,
@@ -651,7 +653,9 @@ pub enum CircuitBreakersCmd {
 #[derive(Subcommand, Debug)]
 pub enum ProjectsCmd {
     List,
-    Get { ident: String },
+    Get {
+        ident: String,
+    },
     Create {
         #[arg(long)]
         name: String,
@@ -666,9 +670,13 @@ pub enum ProjectsCmd {
         #[arg(long)]
         description: Option<String>,
     },
-    Delete { ident: String },
+    Delete {
+        ident: String,
+    },
     /// List services belonging to a project
-    Services { ident: String },
+    Services {
+        ident: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]

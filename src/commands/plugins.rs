@@ -223,10 +223,8 @@ pub async fn cmd_scripts_install(
     }
 
     if !env.is_empty() {
-        let env_map: serde_json::Map<String, Json> = env
-            .into_iter()
-            .map(|(k, v)| (k, Json::String(v)))
-            .collect();
+        let env_map: serde_json::Map<String, Json> =
+            env.into_iter().map(|(k, v)| (k, Json::String(v))).collect();
         config["env"] = Json::Object(env_map);
     }
 

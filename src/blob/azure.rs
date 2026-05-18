@@ -37,8 +37,7 @@ impl AzureStore {
             content_length, date, self.account, blob_path
         );
 
-        let mut mac =
-            Hmac::<Sha256>::new_from_slice(&self.access_key).expect("HMAC key error");
+        let mut mac = Hmac::<Sha256>::new_from_slice(&self.access_key).expect("HMAC key error");
         mac.update(string_to_sign.as_bytes());
         let signature = STANDARD.encode(mac.finalize().into_bytes());
 

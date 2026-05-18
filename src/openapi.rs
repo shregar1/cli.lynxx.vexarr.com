@@ -15,8 +15,8 @@
 use anyhow::{anyhow, Result};
 
 use crate::{
-    DeclPlugin, DeclRoute, DeclService, DeclarativeState, default_lb, default_retries,
-    default_timeout,
+    default_lb, default_retries, default_timeout, DeclPlugin, DeclRoute, DeclService,
+    DeclarativeState,
 };
 
 // ---------------------------------------------------------------------------

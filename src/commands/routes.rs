@@ -182,9 +182,7 @@ pub async fn cmd_routes_test(
         "path": path,
         "headers": headers,
     });
-    let res: RouteTestResponse = client
-        .post(&format!("/routes/{uuid}/test"), &body)
-        .await?;
+    let res: RouteTestResponse = client.post(&format!("/routes/{uuid}/test"), &body).await?;
     if fmt != OutputFormat::Table {
         return emit(&res, fmt);
     }

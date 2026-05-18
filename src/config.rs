@@ -174,11 +174,13 @@ mod tests {
     fn billing_config_round_trip() {
         // Write a config that contains a `[billing]` section with an api_key,
         // serialise to TOML, parse it back, and confirm the key survived.
-        let mut cfg = LocalConfig::default();
-        cfg.billing = Some(BillingConfig {
-            api_key: Some("lnx_live_abc123".into()),
-            url: Some("https://api.lynxx.vexarr.com".into()),
-        });
+        let cfg = LocalConfig {
+            billing: Some(BillingConfig {
+                api_key: Some("lnx_live_abc123".into()),
+                url: Some("https://api.lynxx.vexarr.com".into()),
+            }),
+            ..LocalConfig::default()
+        };
 
         let raw = toml::to_string_pretty(&cfg).expect("serialize");
         assert!(
@@ -190,10 +192,7 @@ mod tests {
         let parsed: LocalConfig = toml::from_str(&raw).expect("deserialize");
         let billing = parsed.billing.expect("billing section preserved");
         assert_eq!(billing.api_key.as_deref(), Some("lnx_live_abc123"));
-        assert_eq!(
-            billing.url.as_deref(),
-            Some("https://api.lynxx.vexarr.com"),
-        );
+        assert_eq!(billing.url.as_deref(), Some("https://api.lynxx.vexarr.com"),);
     }
 
     #[test]
