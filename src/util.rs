@@ -6,73 +6,15 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
-use chrono::{DateTime, Utc};
 use serde_json::Value as Json;
 
 use crate::{dim, COLOR_OFF, FULL_ID};
 
 // ---------------------------------------------------------------------------
-// Time formatting
+// Time formatting — moved to utilx::time, re-exported for existing call sites.
 // ---------------------------------------------------------------------------
 
-/// Turn a duration in seconds into a compact human string: `42s`, `3m12s`,
-/// `2h5m`, `1d4h`.
-pub fn humanize_secs(s: i64) -> String {
-    if s < 60 {
-        format!("{s}s")
-    } else if s < 3600 {
-        format!("{}m{}s", s / 60, s % 60)
-    } else if s < 86_400 {
-        format!("{}h{}m", s / 3600, (s % 3600) / 60)
-    } else {
-        format!("{}d{}h", s / 86_400, (s % 86_400) / 3600)
-    }
-}
-
-/// Produce a relative string like `12s ago`, `3m ago`, `2h ago`, `5d ago`.
-pub fn humanize_relative(dt: DateTime<Utc>) -> String {
-    let delta = Utc::now().signed_duration_since(dt);
-    let secs = delta.num_seconds();
-    if secs < 0 {
-        return "in future".into();
-    }
-    if secs < 60 {
-        format!("{secs}s ago")
-    } else if secs < 3600 {
-        format!("{}m ago", secs / 60)
-    } else if secs < 86_400 {
-        format!("{}h ago", secs / 3600)
-    } else {
-        format!("{}d ago", secs / 86_400)
-    }
-}
-
-/// Parse a `--since` value: relative shorthand (`30m`, `2h`, `1d`, `7d`)
-/// or absolute RFC 3339. Empty string is an error.
-pub fn parse_since(raw: &str) -> Result<DateTime<Utc>> {
-    let s = raw.trim();
-    if s.is_empty() {
-        bail!("--since: empty string");
-    }
-    // Try RFC 3339 first.
-    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
-        return Ok(dt.with_timezone(&Utc));
-    }
-    // Relative: integer + unit.
-    let (num_part, unit_part) =
-        s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
-    let n: i64 = num_part
-        .parse()
-        .with_context(|| format!("--since: not a number: '{num_part}'"))?;
-    let dur = match unit_part {
-        "s" | "sec" | "secs" => chrono::Duration::seconds(n),
-        "m" | "min" | "mins" => chrono::Duration::minutes(n),
-        "h" | "hr" | "hrs" => chrono::Duration::hours(n),
-        "d" | "day" | "days" => chrono::Duration::days(n),
-        other => bail!("--since: unknown unit '{other}' (use s/m/h/d or RFC 3339)"),
-    };
-    Ok(Utc::now() - dur)
-}
+pub use utilx::time::{humanize_relative, humanize_secs, parse_since};
 
 // ---------------------------------------------------------------------------
 // ID formatting
@@ -121,20 +63,8 @@ pub fn print_decoded_body(b64: &str) {
 // URL helpers
 // ---------------------------------------------------------------------------
 
-/// Tiny URL-encoder for query-string values. Avoids pulling in `url` just
-/// for this; we only need to escape a handful of bytes.
-pub fn urlencode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{:02X}", b)),
-        }
-    }
-    out
-}
+/// Query-value percent-encoder — moved to `utilx::encoding::url`.
+pub use utilx::encoding::url::encode as urlencode;
 
 /// Derive the gateway proxy URL from the admin URL by decrementing the port
 /// (admin 9001 -> proxy 9000). Falls back to port 9000 when no explicit port
